@@ -291,10 +291,10 @@ export function DevTelemetryToolbar() {
             <Button
               type="outline"
               size="tiny"
+              icon={<X className="w-3 h-3" />}
               onClick={dismissToolbar}
               title="Disable toolbar (run devTelemetry() to re-enable)"
             >
-              <X className="w-3 h-3 mr-1" />
               Disable
             </Button>
           </div>
