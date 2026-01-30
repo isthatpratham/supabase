@@ -294,6 +294,7 @@ export function DevTelemetryToolbar() {
               icon={<X className="w-3 h-3" />}
               onClick={dismissToolbar}
               title="Disable toolbar (run devTelemetry() to re-enable)"
+              className="mr-8"
             >
               Disable
             </Button>
