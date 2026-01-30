@@ -281,13 +281,13 @@ export function DevTelemetryToolbar() {
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
       <SheetContent side="bottom" className="h-[70vh] overflow-hidden flex flex-col p-0">
-        <SheetHeader className="flex flex-row items-center justify-between px-6 py-4 border-b shrink-0 space-y-0">
-          <div className="flex items-center gap-3">
-            <Activity className="w-5 h-5 text-brand-500" />
-            <SheetTitle className="text-lg font-semibold">Dev Telemetry</SheetTitle>
-            <Badge variant="secondary">Local Only</Badge>
-          </div>
-          <div className="flex items-center gap-2">
+        <SheetHeader className="px-6 py-4 border-b shrink-0 space-y-0">
+          <div className="flex flex-row items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Activity className="w-5 h-5 text-brand-500" />
+              <SheetTitle className="text-lg font-semibold">Dev Telemetry</SheetTitle>
+              <Badge variant="secondary">Local Only</Badge>
+            </div>
             <Button
               type="outline"
               size="tiny"
