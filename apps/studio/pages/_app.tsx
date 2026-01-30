@@ -49,7 +49,10 @@ import FeaturePreviewModal from 'components/interfaces/App/FeaturePreview/Featur
 import { MonacoThemeProvider } from 'components/interfaces/App/MonacoThemeProvider'
 import { RouteValidationWrapper } from 'components/interfaces/App/RouteValidationWrapper'
 import { MainScrollContainerProvider } from 'components/layouts/MainScrollContainerContext'
-import { DevTelemetryToolbar } from 'components/ui/DevTelemetryToolbar'
+import {
+  DevTelemetryToolbar,
+  DevTelemetryToolbarProvider,
+} from 'components/ui/DevTelemetryToolbar'
 import { GlobalErrorBoundaryState } from 'components/ui/ErrorBoundary/GlobalErrorBoundaryState'
 import { useRootQueryClient } from 'data/query-client'
 import { customFont, sourceCodePro } from 'fonts'
@@ -174,24 +177,26 @@ function CustomApp({ Component, pageProps }: AppPropsWithLayout) {
                         enableSystem
                         disableTransitionOnChange
                       >
-                        <AiAssistantStateContextProvider>
-                          <CommandProvider>
-                            <FeaturePreviewContextProvider>
-                              <MainScrollContainerProvider>
-                                {getLayout(<Component {...pageProps} />)}
-                              </MainScrollContainerProvider>
-                              <StudioCommandMenu />
-                              <FeaturePreviewModal />
-                            </FeaturePreviewContextProvider>
-                            <SonnerToaster position="top-right" />
-                            <MonacoThemeProvider />
-                          </CommandProvider>
-                        </AiAssistantStateContextProvider>
+                        <DevTelemetryToolbarProvider>
+                          <AiAssistantStateContextProvider>
+                            <CommandProvider>
+                              <FeaturePreviewContextProvider>
+                                <MainScrollContainerProvider>
+                                  {getLayout(<Component {...pageProps} />)}
+                                </MainScrollContainerProvider>
+                                <StudioCommandMenu />
+                                <FeaturePreviewModal />
+                              </FeaturePreviewContextProvider>
+                              <SonnerToaster position="top-right" />
+                              <MonacoThemeProvider />
+                            </CommandProvider>
+                          </AiAssistantStateContextProvider>
+                          <DevTelemetryToolbar />
+                        </DevTelemetryToolbarProvider>
                       </ThemeProvider>
                     </RouteValidationWrapper>
                   </TooltipProvider>
                   <Telemetry />
-                  <DevTelemetryToolbar />
                   {!isTestEnv && (
                     <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />
                   )}
