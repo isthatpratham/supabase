@@ -126,6 +126,7 @@ function FlagCard({
   onToggle: (value: unknown) => void
 }) {
   const valueType = typeof originalValue
+  const isNull = originalValue === null
 
   return (
     <div className={cn('border rounded-md p-3', isOverridden && 'border-warning bg-warning/5')}>
@@ -137,12 +138,27 @@ function FlagCard({
               Overridden
             </Badge>
           )}
+          {isNull && (
+            <Badge variant="secondary" className="shrink-0">
+              null
+            </Badge>
+          )}
         </div>
 
-        {valueType === 'boolean' ? (
+        {isNull ? (
+          // Null values: show as disabled input with "null" text
+          <Input value="null" disabled className="w-32 opacity-50" />
+        ) : valueType === 'boolean' ? (
           <Switch
             checked={currentValue as boolean}
             onCheckedChange={(checked) => onToggle(checked)}
+          />
+        ) : valueType === 'number' ? (
+          <Input
+            type="number"
+            value={String(currentValue)}
+            onChange={(e) => onToggle(e.target.value)}
+            className="w-32"
           />
         ) : (
           <Input
@@ -165,14 +181,35 @@ function FlagCard({
 
 const STORAGE_KEY = 'dev-telemetry-toolbar-enabled'
 
+/**
+ * Parse an override value to match the original value's type.
+ * Prevents type drift (e.g., numbers becoming strings).
+ */
+function parseOverrideValue(value: unknown, original: unknown): unknown {
+  if (typeof original === 'number') {
+    const parsed = Number(value)
+    return Number.isNaN(parsed) ? original : parsed
+  }
+  if (typeof original === 'boolean') {
+    return Boolean(value)
+  }
+  if (typeof original === 'string') {
+    return String(value)
+  }
+  // For null or other types, return as-is
+  return value
+}
+
 export function DevTelemetryToolbar() {
   const [isOpen, setIsOpen] = useState(false)
   const [isEnabled, setIsEnabled] = useState(false)
   const [events, setEvents] = useState<DevTelemetryEvent[]>([])
   const [activeTab, setActiveTab] = useState<string>('events')
+  const [flagsSubTab, setFlagsSubTab] = useState<'posthog' | 'configcat'>('posthog')
   const [eventFilter, setEventFilter] = useState<string>('')
-  const { posthog: currentFlags } = useFeatureFlags()
-  const [flagOverrides, setFlagOverrides] = useState<Record<string, unknown>>({})
+  const { posthog: posthogFlags, configcat: configcatFlags } = useFeatureFlags()
+  const [phFlagOverrides, setPhFlagOverrides] = useState<Record<string, unknown>>({})
+  const [ccFlagOverrides, setCcFlagOverrides] = useState<Record<string, unknown>>({})
 
   const dismissToolbar = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY)
@@ -269,17 +306,28 @@ export function DevTelemetryToolbar() {
     }
   }, [isEnabled, isOpen])
 
+  // Load PostHog overrides from cookie
   useEffect(() => {
-    const saved = getCookie('x-ph-flag-overrides')
-    if (saved) {
+    const savedPh = getCookie('x-ph-flag-overrides')
+    if (savedPh) {
       try {
-        setFlagOverrides(JSON.parse(saved))
+        setPhFlagOverrides(JSON.parse(savedPh))
       } catch {}
     }
   }, [])
 
-  const saveFlagOverrides = useCallback((overrides: Record<string, unknown>) => {
-    setFlagOverrides(overrides)
+  // Load ConfigCat overrides from cookie
+  useEffect(() => {
+    const savedCc = getCookie('x-cc-flag-overrides')
+    if (savedCc) {
+      try {
+        setCcFlagOverrides(JSON.parse(savedCc))
+      } catch {}
+    }
+  }, [])
+
+  const savePhFlagOverrides = useCallback((overrides: Record<string, unknown>) => {
+    setPhFlagOverrides(overrides)
     if (Object.keys(overrides).length > 0) {
       setCookie('x-ph-flag-overrides', JSON.stringify(overrides), '/')
     } else {
@@ -287,18 +335,50 @@ export function DevTelemetryToolbar() {
     }
   }, [])
 
-  const toggleFlagOverride = (flagName: string, value: unknown) => {
-    const newOverrides = { ...flagOverrides }
-    if (flagName in newOverrides && newOverrides[flagName] === value) {
+  const saveCcFlagOverrides = useCallback((overrides: Record<string, unknown>) => {
+    setCcFlagOverrides(overrides)
+    if (Object.keys(overrides).length > 0) {
+      setCookie('x-cc-flag-overrides', JSON.stringify(overrides), '/')
+    } else {
+      deleteCookie('x-cc-flag-overrides')
+    }
+  }, [])
+
+  const togglePhFlagOverride = (flagName: string, value: unknown) => {
+    const newOverrides = { ...phFlagOverrides }
+    const originalValue = posthogFlags[flagName]
+    // If setting back to original value, remove the override
+    if (value === originalValue) {
+      delete newOverrides[flagName]
+    } else if (flagName in newOverrides && newOverrides[flagName] === value) {
       delete newOverrides[flagName]
     } else {
       newOverrides[flagName] = value
     }
-    saveFlagOverrides(newOverrides)
+    savePhFlagOverrides(newOverrides)
   }
 
-  const clearOverrides = () => {
-    saveFlagOverrides({})
+  const toggleCcFlagOverride = (flagName: string, value: unknown) => {
+    const newOverrides = { ...ccFlagOverrides }
+    const originalValue = configcatFlags[flagName]
+    // Parse value to match original type
+    const parsedValue = parseOverrideValue(value, originalValue)
+    // If setting back to original value, remove the override
+    if (parsedValue === originalValue) {
+      delete newOverrides[flagName]
+    } else if (flagName in newOverrides && newOverrides[flagName] === parsedValue) {
+      delete newOverrides[flagName]
+    } else {
+      newOverrides[flagName] = parsedValue
+    }
+    saveCcFlagOverrides(newOverrides)
+  }
+
+  const clearAllOverrides = () => {
+    setPhFlagOverrides({})
+    setCcFlagOverrides({})
+    deleteCookie('x-ph-flag-overrides')
+    deleteCookie('x-cc-flag-overrides')
     window.location.reload()
   }
 
@@ -314,7 +394,9 @@ export function DevTelemetryToolbar() {
     .slice()
     .sort((a, b) => b.timestamp - a.timestamp)
 
-  const overrideCount = Object.keys(flagOverrides).length
+  const phOverrideCount = Object.keys(phFlagOverrides).length
+  const ccOverrideCount = Object.keys(ccFlagOverrides).length
+  const totalOverrideCount = phOverrideCount + ccOverrideCount
 
   if (!IS_LOCAL_DEV || !isEnabled) return null
 
@@ -375,7 +457,7 @@ export function DevTelemetryToolbar() {
               </TabsTrigger>
               <TabsTrigger value="flags" className="flex items-center gap-2 px-4">
                 <Flag className="w-4 h-4" />
-                Flags {overrideCount > 0 && `(${overrideCount} overrides)`}
+                Flags {totalOverrideCount > 0 && `(${totalOverrideCount} overrides)`}
               </TabsTrigger>
             </TabsList>
 
@@ -410,34 +492,85 @@ export function DevTelemetryToolbar() {
 
             <TabsContent
               value="flags"
-              className="flex-1 overflow-y-auto pb-6 data-[state=inactive]:hidden"
+              className="flex-1 flex flex-col overflow-hidden data-[state=inactive]:hidden"
             >
-              <div className="space-y-4">
-                {overrideCount > 0 && (
-                  <div className="flex items-center justify-between p-3 bg-warning/10 rounded-md">
-                    <span className="text-sm text-warning">{overrideCount} flag(s) overridden</span>
-                    <Button type="outline" onClick={clearOverrides}>
+              <div className="flex flex-col flex-1 overflow-hidden">
+                {totalOverrideCount > 0 && (
+                  <div className="flex items-center justify-between p-3 bg-warning/10 rounded-md mb-4 shrink-0">
+                    <span className="text-sm text-warning">
+                      {totalOverrideCount} flag(s) overridden
+                      {phOverrideCount > 0 && ccOverrideCount > 0
+                        ? ` (${phOverrideCount} PostHog, ${ccOverrideCount} ConfigCat)`
+                        : ''}
+                    </span>
+                    <Button type="outline" onClick={clearAllOverrides}>
                       Clear & Reload
                     </Button>
                   </div>
                 )}
 
-                {Object.keys(currentFlags).length === 0 ? (
-                  <div className="text-center text-foreground-muted py-8">
-                    No PostHog feature flags loaded yet.
-                  </div>
-                ) : (
-                  Object.entries(currentFlags).map(([flagName, flagValue]) => (
-                    <FlagCard
-                      key={flagName}
-                      flagName={flagName}
-                      currentValue={flagOverrides[flagName] ?? flagValue}
-                      originalValue={flagValue}
-                      isOverridden={flagName in flagOverrides}
-                      onToggle={(value) => toggleFlagOverride(flagName, value)}
-                    />
-                  ))
-                )}
+                <Tabs
+                  value={flagsSubTab}
+                  onValueChange={(v) => setFlagsSubTab(v as 'posthog' | 'configcat')}
+                  className="flex-1 flex flex-col overflow-hidden"
+                >
+                  <TabsList className="shrink-0 mb-4">
+                    <TabsTrigger value="posthog" className="px-4">
+                      PostHog {phOverrideCount > 0 && `(${phOverrideCount})`}
+                    </TabsTrigger>
+                    <TabsTrigger value="configcat" className="px-4">
+                      ConfigCat {ccOverrideCount > 0 && `(${ccOverrideCount})`}
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent
+                    value="posthog"
+                    className="flex-1 overflow-y-auto pb-6 data-[state=inactive]:hidden"
+                  >
+                    <div className="space-y-4">
+                      {Object.keys(posthogFlags).length === 0 ? (
+                        <div className="text-center text-foreground-muted py-8">
+                          No PostHog feature flags loaded yet.
+                        </div>
+                      ) : (
+                        Object.entries(posthogFlags).map(([flagName, flagValue]) => (
+                          <FlagCard
+                            key={flagName}
+                            flagName={flagName}
+                            currentValue={phFlagOverrides[flagName] ?? flagValue}
+                            originalValue={flagValue}
+                            isOverridden={flagName in phFlagOverrides}
+                            onToggle={(value) => togglePhFlagOverride(flagName, value)}
+                          />
+                        ))
+                      )}
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent
+                    value="configcat"
+                    className="flex-1 overflow-y-auto pb-6 data-[state=inactive]:hidden"
+                  >
+                    <div className="space-y-4">
+                      {Object.keys(configcatFlags).length === 0 ? (
+                        <div className="text-center text-foreground-muted py-8">
+                          No ConfigCat feature flags loaded yet.
+                        </div>
+                      ) : (
+                        Object.entries(configcatFlags).map(([flagName, flagValue]) => (
+                          <FlagCard
+                            key={flagName}
+                            flagName={flagName}
+                            currentValue={ccFlagOverrides[flagName] ?? flagValue}
+                            originalValue={flagValue}
+                            isOverridden={flagName in ccFlagOverrides}
+                            onToggle={(value) => toggleCcFlagOverride(flagName, value)}
+                          />
+                        ))
+                      )}
+                    </div>
+                  </TabsContent>
+                </Tabs>
               </div>
             </TabsContent>
           </Tabs>
